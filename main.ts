@@ -12,10 +12,24 @@
 // Node 22, no dependencies. Run: node main.ts
 import { mkdirSync, writeFileSync } from "node:fs";
 
-const OUT_PATH = "/output/entry.txt";
+// ---------------------------------------------------------------------------
+// Limits imposed by the bounty: exactly 100 words, at most 600 characters
+// and 600 UTF-8 bytes, and the entry must not be blank.
+// ---------------------------------------------------------------------------
+const EXPECTED_WORDS = 100;
+const MAX_CHARS = 600;
+const MAX_BYTES = 600;
 
-// One sentence per line; joined with a single space into one paragraph
-// of speakable dialogue, exactly 100 words.
+const OUT_DIR = "/output";
+const OUT_PATH = `${OUT_DIR}/entry.txt`;
+
+/** Sentences are spoken as one continuous paragraph, so they join on one space. */
+const LINE_SEPARATOR = " ";
+
+// ---------------------------------------------------------------------------
+// The monologue, one sentence per line. The lines are joined with a single
+// space into one paragraph of speakable dialogue, exactly 100 words.
+// ---------------------------------------------------------------------------
 const SENTENCES: string[] = [
   "Sit down, hero.",
   "No—don't kneel; the flagstones are cold, and frankly, so am I.",
@@ -38,36 +52,96 @@ const SENTENCES: string[] = [
   "Just leave the kettle—it's the only thing here that still loves me.",
 ];
 
-const ENTRY = SENTENCES.join(" ");
+// ---------------------------------------------------------------------------
+// Assembly
+// ---------------------------------------------------------------------------
+
+/** A sentence must be a single line of dialogue: no embedded line breaks. */
+function validateLine(line: string, index: number): void {
+  if (/[\r\n]/.test(line)) {
+    throw new Error(`sentence ${index} contains a line break`);
+  }
+  if (line.trim().length === 0) {
+    throw new Error(`sentence ${index} is empty`);
+  }
+}
+
+/** Join the checked sentences into the single-paragraph entry text. */
+function formatEntry(lines: string[]): string {
+  lines.forEach(validateLine);
+  return lines.join(LINE_SEPARATOR);
+}
+
+// ---------------------------------------------------------------------------
+// Measurement helpers
+// ---------------------------------------------------------------------------
 
 function countWords(text: string): number {
   return text.split(/\s+/).filter((w) => w.length > 0).length;
 }
 
-function main(): void {
-  const words = countWords(ENTRY);
-  if (words !== 100) {
-    throw new Error(`word count is ${words}, expected exactly 100`);
-  }
+function countChars(text: string): number {
+  return [...text].length;
+}
 
-  const chars = [...ENTRY].length;
-  if (chars < 1 || chars > 600) {
-    throw new Error(`character count is ${chars}, expected 1-600`);
-  }
+function countBytes(text: string): number {
+  return Buffer.byteLength(text, "utf8");
+}
 
-  const bytes = Buffer.byteLength(ENTRY, "utf8");
-  if (bytes > 600) {
-    throw new Error(`byte length is ${bytes}, expected at most 600`);
-  }
+/** Measure the entry once so validation and reporting agree on the numbers. */
+function measureEntry(text: string): { words: number; chars: number; bytes: number } {
+  return { words: countWords(text), chars: countChars(text), bytes: countBytes(text) };
+}
 
-  if (ENTRY.trim().length === 0) {
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+/** The entry must be exactly one non-blank line of the right size. */
+function assertSingleLine(text: string): void {
+  if (text.trim().length === 0) {
     throw new Error("entry is only whitespace");
   }
+  if (/[\r\n]/.test(text)) {
+    throw new Error("entry must be a single line");
+  }
+}
 
-  mkdirSync("/output", { recursive: true });
-  writeFileSync(OUT_PATH, ENTRY, "utf8");
+function validateEntry(text: string): void {
+  assertSingleLine(text);
 
+  const words = countWords(text);
+  if (words !== EXPECTED_WORDS) {
+    throw new Error(`word count is ${words}, expected exactly ${EXPECTED_WORDS}`);
+  }
+
+  const chars = countChars(text);
+  if (chars < 1 || chars > MAX_CHARS) {
+    throw new Error(`character count is ${chars}, expected 1-${MAX_CHARS}`);
+  }
+
+  const bytes = countBytes(text);
+  if (bytes > MAX_BYTES) {
+    throw new Error(`byte length is ${bytes}, expected at most ${MAX_BYTES}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Output
+// ---------------------------------------------------------------------------
+
+/** Persist the validated entry and report its size. */
+function writeEntry(text: string): void {
+  const { words, chars, bytes } = measureEntry(text);
+  mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(OUT_PATH, text, "utf8");
   console.log(`wrote ${OUT_PATH}: ${words} words, ${chars} chars, ${bytes} bytes`);
+}
+
+function main(): void {
+  const entry = formatEntry(SENTENCES);
+  validateEntry(entry);
+  writeEntry(entry);
 }
 
 main();
